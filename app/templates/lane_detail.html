@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lane Detail — SurchargeAgent</title>
+  <link rel="stylesheet" href="/static/css/main.css"/>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <a href="/" class="back-btn">← Dashboard</a>
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">SurchargeAgent</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="as-of" id="asOf"></span>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="lane-detail-header">
+      <h1 id="laneTitle">Lane Detail</h1>
+      <div id="laneRiskBadge" class="lane-risk-badge"></div>
+    </div>
+
+    <!-- Risk breakdown -->
+    <section class="two-col">
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Risk Breakdown</h2></div>
+        <div id="riskBreakdown" class="risk-breakdown"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Active Surcharge Types</h2></div>
+        <div id="activeSurcharges" class="active-surcharges"></div>
+      </div>
+    </section>
+
+    <!-- AI Deep Dive -->
+    <section class="card full-width">
+      <div class="card-header">
+        <h2 class="card-title">AI Analysis</h2>
+        <button class="btn btn-sm" id="deepDiveBtn" onclick="loadDeepDive()">Generate Analysis</button>
+      </div>
+      <div id="deepDiveContent" class="brief-content">
+        <p class="muted">Click "Generate Analysis" for an AI-powered deep dive on this lane.</p>
+      </div>
+    </section>
+
+    <!-- Lane notices -->
+    <section class="card full-width">
+      <div class="card-header"><h2 class="card-title">Notices for This Lane</h2></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Carrier</th><th>Notice</th><th>Type(s)</th><th>Amount</th><th>Effective</th></tr>
+          </thead>
+          <tbody id="laneNoticesBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const LANE_NAME = decodeURIComponent(window.location.pathname.split('/lane/')[1] || '');
+    document.getElementById('laneTitle').textContent = LANE_NAME;
+
+    async function init() {
+      const resp = await fetch(`/api/risk/lane/${encodeURIComponent(LANE_NAME)}`);
+      if (!resp.ok) { document.body.innerHTML += '<p>Lane not found.</p>'; return; }
+      const data = await resp.json();
+      const r = data.lane_risk;
+
+      document.getElementById('asOf').textContent = `Risk score: ${r.composite_score}/100`;
+      const badge = document.getElementById('laneRiskBadge');
+      badge.textContent = r.tier;
+      badge.style.background = r.tier_color;
+      badge.style.color = '#fff';
+      badge.style.padding = '4px 14px';
+      badge.style.borderRadius = '20px';
+      badge.style.fontWeight = '700';
+      badge.style.fontSize = '1rem';
+
+      // Risk breakdown
+      const rb = document.getElementById('riskBreakdown');
+      rb.innerHTML = `
+        <div class="score-bar-row"><span>Geopolitical</span><div class="score-bar"><div style="width:${r.geo_score}%;background:#ef4444"></div></div><span>${r.geo_score}</span></div>
+        <div class="score-bar-row"><span>Surcharge Severity</span><div class="score-bar"><div style="width:${r.surcharge_score}%;background:#f97316"></div></div><span>${r.surcharge_score}</span></div>
+        <div class="score-bar-row"><span>Bunker Volatility</span><div class="score-bar"><div style="width:${r.bunker_score}%;background:#eab308"></div></div><span>${r.bunker_score}</span></div>
+        <div class="score-bar-row"><span>Notice Velocity</span><div class="score-bar"><div style="width:${r.velocity_score}%;background:#6366f1"></div></div><span>${r.velocity_score}</span></div>
+        <div class="score-bar-row composite"><span>COMPOSITE</span><div class="score-bar"><div style="width:${r.composite_score}%;background:${r.tier_color}"></div></div><span>${r.composite_score}</span></div>
+        <p class="muted" style="margin-top:12px">Affected zones: ${(r.affected_zones||[]).join(', ') || 'None'}</p>
+      `;
+
+      // Active surcharges
+      const as = document.getElementById('activeSurcharges');
+      if (r.active_surcharge_types && r.active_surcharge_types.length) {
+        as.innerHTML = r.active_surcharge_types.map(t =>
+          `<span class="surcharge-tag">${t}</span>`
+        ).join('') + `<p class="muted" style="margin-top:12px">${r.notice_count} notices found for this lane.</p>`;
+      } else {
+        as.innerHTML = '<p class="muted">No active surcharge types detected.</p>';
+      }
+
+      // Notices table
+      const noticesResp = await fetch(`/api/notices?lane=${encodeURIComponent(LANE_NAME)}&limit=30`);
+      const noticesData = await noticesResp.json();
+      const tbody = document.getElementById('laneNoticesBody');
+      if (!noticesData.notices.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">No notices found for this lane.</td></tr>';
+      } else {
+        tbody.innerHTML = noticesData.notices.map(n => `
+          <tr>
+            <td>${n.carrier || '—'}</td>
+            <td><a href="${n.source_url}" target="_blank" class="notice-link">${n.title}</a></td>
+            <td>${(n.surcharge_types||[]).map(t=>`<span class="surcharge-tag">${t}</span>`).join('')}</td>
+            <td>${n.amount || '—'}</td>
+            <td>${n.effective_date || '—'}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    async function loadDeepDive() {
+      const btn = document.getElementById('deepDiveBtn');
+      btn.textContent = 'Generating...';
+      btn.disabled = true;
+      const resp = await fetch(`/api/risk/lane/${encodeURIComponent(LANE_NAME)}?deep_dive=true`);
+      const data = await resp.json();
+      document.getElementById('deepDiveContent').innerHTML = data.deep_dive_html || '<p>No analysis available.</p>';
+      btn.textContent = 'Regenerate';
+      btn.disabled = false;
+    }
+
+    init();
+  </script>
+</body>
+</html>

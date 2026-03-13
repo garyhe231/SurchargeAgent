@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Surcharge Dashboard</title>
+  <link rel="stylesheet" href="/static/css/main.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">SurchargeAgent</span>
+      </div>
+      <span class="header-sub">Carrier Surcharge &amp; Bunker Intelligence</span>
+    </div>
+    <div class="header-right">
+      <span class="as-of" id="asOf">Loading...</span>
+      <button class="btn btn-primary" id="refreshBtn" onclick="refreshData()">Refresh Data</button>
+    </div>
+  </header>
+
+  <!-- Alert Banner -->
+  <div class="alert-banner" id="alertBanner" style="display:none">
+    <span class="alert-icon">🚨</span>
+    <span id="alertText"></span>
+  </div>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- KPI Cards Row -->
+    <section class="kpi-row">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-label">Critical Alerts</div>
+        <div class="kpi-value" id="kpiCritical">—</div>
+        <div class="kpi-sub">EBS / WRS / RSA</div>
+      </div>
+      <div class="kpi-card kpi-orange">
+        <div class="kpi-label">Active Notices</div>
+        <div class="kpi-value" id="kpiNotices">—</div>
+        <div class="kpi-sub">Today's surcharges</div>
+      </div>
+      <div class="kpi-card kpi-yellow">
+        <div class="kpi-label">Carriers Active</div>
+        <div class="kpi-value" id="kpiCarriers">—</div>
+        <div class="kpi-sub">Issuing surcharges</div>
+      </div>
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-label">SGP VLSFO</div>
+        <div class="kpi-value" id="kpiVlsfo">—</div>
+        <div class="kpi-sub">USD/MT Singapore</div>
+      </div>
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-label">Bunker Volatility</div>
+        <div class="kpi-value" id="kpiBunkerVol">—</div>
+        <div class="kpi-sub">30-day CV score</div>
+      </div>
+    </section>
+
+    <!-- Two-column: Risk Map + AI Brief -->
+    <section class="two-col">
+
+      <!-- Left: Trade Lane Risk Matrix -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Trade Lane Risk Matrix</h2>
+          <span class="card-badge" id="riskUpdateTime"></span>
+        </div>
+        <div id="laneRiskList" class="lane-list"></div>
+      </div>
+
+      <!-- Right: AI Executive Brief -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">AI Executive Brief</h2>
+          <button class="btn btn-sm" onclick="loadBrief()">Regenerate</button>
+        </div>
+        <div id="briefContent" class="brief-content">
+          <div class="loading-spinner"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Bunker Rate Charts -->
+    <section class="three-col">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">VLSFO – Singapore</h2>
+          <span class="grade-badge vlsfo">IMO 2020</span>
+        </div>
+        <canvas id="chartVlsfo" height="180"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">MGO – Singapore</h2>
+          <span class="grade-badge mgo">DMA/DMZ</span>
+        </div>
+        <canvas id="chartMgo" height="180"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">IFO380 – Singapore</h2>
+          <span class="grade-badge ifo">HSFO</span>
+        </div>
+        <canvas id="chartIfo" height="180"></canvas>
+      </div>
+    </section>
+
+    <!-- Surcharge Type Distribution + Carrier Exposure -->
+    <section class="two-col">
+
+      <!-- Surcharge Type Breakdown -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Surcharge Type Distribution</h2>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chartTypes" height="260"></canvas>
+        </div>
+      </div>
+
+      <!-- Carrier Exposure Leaderboard -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Carrier Surcharge Exposure</h2>
+        </div>
+        <div id="carrierList" class="carrier-list"></div>
+      </div>
+
+    </section>
+
+    <!-- Global Bunker Hub Prices -->
+    <section class="card full-width">
+      <div class="card-header">
+        <h2 class="card-title">Global Bunker Hub Prices</h2>
+        <div class="grade-filter">
+          <button class="grade-btn active" data-grade="VLSFO" onclick="filterBunkerTable('VLSFO', this)">VLSFO</button>
+          <button class="grade-btn" data-grade="MGO" onclick="filterBunkerTable('MGO', this)">MGO</button>
+          <button class="grade-btn" data-grade="IFO380" onclick="filterBunkerTable('IFO380', this)">IFO380</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="bunkerTable">
+          <thead>
+            <tr>
+              <th>Hub</th>
+              <th>VLSFO ($/MT)</th>
+              <th>MGO ($/MT)</th>
+              <th>IFO380 ($/MT)</th>
+              <th>vs. Avg</th>
+            </tr>
+          </thead>
+          <tbody id="bunkerTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Recent Surcharge Notices -->
+    <section class="card full-width">
+      <div class="card-header">
+        <h2 class="card-title">Surcharge Notices Feed</h2>
+        <div class="filter-row">
+          <select class="filter-select" id="filterCarrier" onchange="filterNotices()">
+            <option value="">All Carriers</option>
+          </select>
+          <select class="filter-select" id="filterType" onchange="filterNotices()">
+            <option value="">All Types</option>
+          </select>
+          <select class="filter-select" id="filterLane" onchange="filterNotices()">
+            <option value="">All Lanes</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="noticesTable">
+          <thead>
+            <tr>
+              <th>Carrier</th>
+              <th>Notice</th>
+              <th>Type(s)</th>
+              <th>Lane(s)</th>
+              <th>Amount</th>
+              <th>Effective</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="noticesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Geopolitical Risk Zones -->
+    <section class="card full-width">
+      <div class="card-header">
+        <h2 class="card-title">Geopolitical Risk Zones</h2>
+      </div>
+      <div id="riskZones" class="risk-zones-grid"></div>
+    </section>
+
+    <!-- AI Q&A Chat -->
+    <section class="card full-width">
+      <div class="card-header">
+        <h2 class="card-title">Ask the Analyst</h2>
+        <span class="card-badge">AI-Powered</span>
+      </div>
+      <div class="qa-container">
+        <div id="qaHistory" class="qa-history"></div>
+        <div class="qa-input-row">
+          <input
+            type="text"
+            id="qaInput"
+            class="qa-input"
+            placeholder="e.g. What is driving BAF increases on Asia-Europe? Which carrier has the most GRI notices?"
+            onkeydown="if(event.key==='Enter') askQuestion()"
+          />
+          <button class="btn btn-primary" onclick="askQuestion()" id="qaBtn">Ask</button>
+        </div>
+        <div class="qa-suggestions">
+          <button class="suggestion-chip" onclick="askSuggestion(this)">What's driving EBS on Asia-Europe?</button>
+          <button class="suggestion-chip" onclick="askSuggestion(this)">Compare VLSFO vs BAF levels</button>
+          <button class="suggestion-chip" onclick="askSuggestion(this)">Iran risk impact on surcharges</button>
+          <button class="suggestion-chip" onclick="askSuggestion(this)">Which carrier is most aggressive on GRI?</button>
+          <button class="suggestion-chip" onclick="askSuggestion(this)">LatAm port congestion surcharges</button>
+          <button class="suggestion-chip" onclick="askSuggestion(this)">Estimate total surcharge cost per TEU Asia-USEC</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <span>SurchargeAgent — Freight Surcharge Intelligence Platform</span>
+    <span id="footerTime"></span>
+  </footer>
+
+  <script src="/static/js/main.js"></script>
+</body>
+</html>
