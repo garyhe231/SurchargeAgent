@@ -7,4 +7,5 @@ beautifulsoup4==4.12.3
 feedparser==6.0.12
 APScheduler==3.11.2
 aiofiles==23.2.1
-anthropic>=0.25.0
+boto3>=1.34.0
+botocore>=1.34.0

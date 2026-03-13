@@ -4,7 +4,12 @@ SurchargeAgent — configuration constants.
 import os
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = "claude-opus-4-6"
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+CLAUDE_MODEL = (
+    os.getenv("ANTHROPIC_DEFAULT_OPUS_MODEL")
+    or os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL")
+    or "claude-opus-4-6"
+)
 
 # Carriers to monitor
 TRACKED_CARRIERS = [

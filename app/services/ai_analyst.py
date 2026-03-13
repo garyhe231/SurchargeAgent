@@ -1,17 +1,46 @@
 """
-AI Analyst — uses Claude to synthesize surcharge notices, bunker rates,
-and risk scores into actionable intelligence for freight professionals.
+AI Analyst — uses Claude via AWS Bedrock to synthesize surcharge notices,
+bunker rates, and risk scores into actionable intelligence.
 """
 import json
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-import anthropic
+import boto3
+from botocore.config import Config
 
-from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, RISK_ZONES, SURCHARGE_TYPES
+from app.config import AWS_REGION, CLAUDE_MODEL
 
 logger = logging.getLogger(__name__)
+
+_bedrock = None
+
+
+def _get_client():
+    global _bedrock
+    if _bedrock is None:
+        _bedrock = boto3.client(
+            "bedrock-runtime",
+            region_name=AWS_REGION,
+            config=Config(read_timeout=120, connect_timeout=10),
+        )
+    return _bedrock
+
+
+def _invoke(prompt: str, max_tokens: int = 4096) -> str:
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    })
+    resp = _get_client().invoke_model(
+        modelId=CLAUDE_MODEL,
+        body=body,
+        contentType="application/json",
+        accept="application/json",
+    )
+    return json.loads(resp["body"].read())["content"][0]["text"]
 
 
 def _build_context(
@@ -20,8 +49,6 @@ def _build_context(
     lane_risks: List[Dict],
     carrier_exposure: List[Dict],
 ) -> str:
-    """Build a compact context string for the AI prompt."""
-    # Top 15 notices
     top_notices = surcharge_notices[:15]
     notices_text = "\n".join(
         f"- [{n.get('carrier', 'Unknown carrier')}] {n['title'][:120]} "
@@ -32,7 +59,6 @@ def _build_context(
         for n in top_notices
     )
 
-    # Bunker summary (Singapore VLSFO/MGO/IFO380)
     sg_rates = {r["grade"]: r["price_usd_mt"] for r in bunker_rates if r.get("hub") == "Singapore"}
     rot_rates = {r["grade"]: r["price_usd_mt"] for r in bunker_rates if r.get("hub") == "Rotterdam"}
     fuj_rates = {r["grade"]: r["price_usd_mt"] for r in bunker_rates if r.get("hub") == "Fujairah"}
@@ -46,7 +72,6 @@ def _build_context(
         f"Fujairah: VLSFO ${fuj_rates.get('VLSFO', 'N/A')}/MT"
     )
 
-    # Top 5 risk lanes
     top_risks = lane_risks[:5]
     risk_text = "\n".join(
         f"- {r['lane']}: {r['tier']} ({r['composite_score']}/100) — "
@@ -54,7 +79,6 @@ def _build_context(
         for r in top_risks
     )
 
-    # Top carriers
     top_carriers = carrier_exposure[:5]
     carrier_text = "\n".join(
         f"- {c['carrier']}: {c['notice_count']} notices, "
@@ -82,13 +106,6 @@ def generate_executive_brief(
     lane_risks: List[Dict],
     carrier_exposure: List[Dict],
 ) -> str:
-    """
-    Generate a comprehensive executive brief using Claude.
-    Returns HTML-formatted content.
-    """
-    if not ANTHROPIC_API_KEY:
-        return "<p><em>AI analysis unavailable — ANTHROPIC_API_KEY not set.</em></p>"
-
     context = _build_context(surcharge_notices, bunker_rates, lane_risks, carrier_exposure)
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
@@ -128,13 +145,7 @@ Your brief MUST cover all of the following sections in order:
 Use <strong> tags for carrier names and surcharge types. Use <span class="risk-critical">, <span class="risk-high">, <span class="risk-medium">, <span class="risk-low"> for risk levels. Keep the tone professional and direct."""
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text
+        return _invoke(prompt, max_tokens=4096)
     except Exception as exc:
         logger.error("AI brief generation failed: %s", exc)
         return f"<p><em>AI analysis error: {exc}</em></p>"
@@ -146,10 +157,6 @@ def generate_lane_deep_dive(
     bunker_rates: List[Dict],
     risk_data: Dict,
 ) -> str:
-    """Generate a deep-dive analysis for a specific trade lane."""
-    if not ANTHROPIC_API_KEY:
-        return "<p><em>AI analysis unavailable — ANTHROPIC_API_KEY not set.</em></p>"
-
     lane_notices = [n for n in surcharge_notices if lane in (n.get("trade_lanes") or [])]
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
@@ -193,13 +200,7 @@ Write a focused 300-400 word HTML analysis covering:
 Format as clean HTML paragraphs with <h4> subheadings."""
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text
+        return _invoke(prompt, max_tokens=1024)
     except Exception as exc:
         logger.error("Lane deep dive failed: %s", exc)
         return f"<p><em>Analysis error: {exc}</em></p>"
@@ -211,10 +212,6 @@ def answer_surcharge_question(
     bunker_rates: List[Dict],
     lane_risks: List[Dict],
 ) -> str:
-    """Answer an ad-hoc question about the surcharge landscape."""
-    if not ANTHROPIC_API_KEY:
-        return "AI analysis unavailable — ANTHROPIC_API_KEY not set."
-
     context = _build_context(surcharge_notices, bunker_rates, lane_risks, [])
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
@@ -230,13 +227,7 @@ USER QUESTION: {question}
 Answer in 2-4 paragraphs. If the data doesn't contain enough information to fully answer, say so and provide what context you can."""
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=800,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text
+        return _invoke(prompt, max_tokens=800)
     except Exception as exc:
         logger.error("Q&A failed: %s", exc)
         return f"Error: {exc}"
